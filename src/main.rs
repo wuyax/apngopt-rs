@@ -43,10 +43,8 @@ pub struct Args {
 
 fn main() {
     let args = Args::parse();
-    println!("APNG Optimizer 1.4.1 (Rust Edition)");
-    println!("Input: {}", args.input);
 
-    let out_file = args.output.unwrap_or_else(|| {
+    let out_file = args.output.clone().unwrap_or_else(|| {
         let path = std::path::Path::new(&args.input);
         let stem = path.file_stem().unwrap().to_str().unwrap();
         let ext = path
@@ -59,16 +57,9 @@ fn main() {
 
     match load_apng(&args.input) {
         Ok(apng) => {
-            println!("APNG loaded successfully!");
-            println!("Size: {}x{}", apng.width, apng.height);
-            println!("Loops: {}", apng.loops);
-            println!("Frames: {}", apng.frames.len());
+            println!("Optimizing {} ({}x{}, {} frames)...", args.input, apng.width, apng.height, apng.frames.len());
 
             let mut full_frames = reconstruct_frames(&apng);
-            println!(
-                "Successfully reconstructed {} full frames.",
-                full_frames.len()
-            );
 
             let mut palette = None;
             let mut transparency = None;
@@ -77,7 +68,6 @@ fn main() {
             let mut tcolor = 0;
 
             if args.disable_imagequant == 0 {
-                println!("Quantizing frames with libimagequant...");
                 match quantize::quantize_frames(&full_frames, apng.width, apng.height) {
                     Ok(quantized) => {
                         full_frames = quantized.frames;
@@ -95,16 +85,9 @@ fn main() {
                                 tcolor = idx as u8;
                             }
                         }
-                        println!(
-                            "Quantization complete. Palette size: {}",
-                            palette.as_ref().unwrap().len()
-                        );
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Quantization failed: {}. Proceeding without quantization.",
-                            e
-                        );
+                        eprintln!("Quantization failed: {}. Proceeding without quantization.", e);
                     }
                 }
             }
@@ -125,7 +108,6 @@ fn main() {
                     }]
                 } else {
                     let prev_canvas = &full_frames[i - 1];
-                    // We simply assume APNG_DISPOSE_OP_NONE (0) for now.
                     optimizer::get_rect_candidates(
                         prev_canvas,
                         curr_canvas,
@@ -139,14 +121,12 @@ fn main() {
                 };
 
                 if candidates.is_empty() {
-                    println!("Frame {} is identical to previous, skipping...", i);
                     if let Some(last) = optimized_frames.last_mut() {
                         if last.delay_den == apng.frames[i].delay_den {
                             last.delay_num += apng.frames[i].delay_num;
                         }
                     }
                 } else {
-                    // Find the best compressed candidate among all candidates (Source, Over)
                     let mut best_compressed: Option<(Vec<u8>, optimizer::RectResult)> = None;
 
                     for cand in candidates {
@@ -159,16 +139,6 @@ fn main() {
                     }
 
                     let (compressed, cand) = best_compressed.unwrap();
-                    println!(
-                        "Frame {} bounded {}x{} at ({},{}) [Blend: {}] => compressed to {} bytes",
-                        i,
-                        cand.w,
-                        cand.h,
-                        cand.x,
-                        cand.y,
-                        cand.blend_op,
-                        compressed.len()
-                    );
 
                     optimized_frames.push(OptimizedFrame {
                         x: cand.x,
@@ -183,12 +153,7 @@ fn main() {
                     });
                 }
             }
-            println!(
-                "Optimization completed. Final frame count: {}",
-                optimized_frames.len()
-            );
 
-            println!("Saving to {}...", out_file);
             if let Err(e) = save_apng(
                 &out_file,
                 apng.width,
@@ -201,7 +166,7 @@ fn main() {
                 eprintln!("Error saving APNG: {}", e);
                 process::exit(1);
             }
-            println!("All done!");
+            println!("Saved to {}.", out_file);
         }
         Err(e) => {
             eprintln!("Error loading APNG: {}", e);

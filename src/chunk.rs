@@ -36,6 +36,7 @@ impl Chunk {
 }
 
 /// Read a chunk from a reader and verify its CRC32
+#[allow(dead_code)]
 pub fn read_chunk<R: Read>(reader: &mut R) -> io::Result<Chunk> {
     let mut len_bytes = [0u8; 4];
     reader.read_exact(&mut len_bytes)?;
