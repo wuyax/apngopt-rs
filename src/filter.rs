@@ -103,3 +103,52 @@ pub fn apply_filter(data: &[u8], width: u32, height: u32, bpp: usize, filter_typ
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_filter_none() {
+        let row = vec![10, 20, 30, 40];
+        let result = filter_none(&row, 4);
+        assert_eq!(result, vec![0, 10, 20, 30, 40]);
+    }
+
+    #[test]
+    fn test_filter_sub() {
+        let row = vec![10, 20, 30, 40];
+        let result = filter_sub(&row, 4, 2); // bpp = 2
+        // Filter sub formula: row[i] - left
+        // left: 0, 0, 10, 20
+        // Expected:
+        // 10 - 0 = 10
+        // 20 - 0 = 20
+        // 30 - 10 = 20
+        // 40 - 20 = 20
+        assert_eq!(result, vec![1, 10, 20, 20, 20]);
+    }
+
+    #[test]
+    fn test_filter_up() {
+        let row = vec![10, 20, 30, 40];
+        let prev_row = vec![5, 10, 15, 20];
+        let result = filter_up(&row, Some(&prev_row), 4);
+        assert_eq!(result, vec![2, 5, 10, 15, 20]);
+    }
+
+    #[test]
+    fn test_apply_filter() {
+        let data = vec![
+            10, 20, 30, 40,
+            50, 60, 70, 80,
+        ];
+        // Test filter 0 (None)
+        let filtered = apply_filter(&data, 2, 2, 2, 0); // width=2, height=2, bpp=2
+        assert_eq!(filtered, vec![
+            0, 10, 20, 30, 40,
+            0, 50, 60, 70, 80
+        ]);
+    }
+}
+
