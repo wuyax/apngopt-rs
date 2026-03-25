@@ -19,6 +19,71 @@ cargo install apngopt-rs
 
 *(Note: Currently requires a Rust toolchain to build).*
 
+## WebAssembly (WASM) Support
+
+`apngopt-rs` can be compiled to WebAssembly to run directly in modern web browsers or Node.js environments.
+
+### Building for WASM
+
+To build the WASM package, ensure you have `wasm-pack` installed:
+
+```bash
+cargo install wasm-pack
+```
+
+Then, run the build command in the project root:
+
+```bash
+# Build for Web environments (browsers, Webpack, Vite)
+wasm-pack build --target web
+
+# Build for Node.js environments
+wasm-pack build --target nodejs
+```
+
+This will output a `pkg/` directory containing the `.wasm` binary and JavaScript bindings.
+
+### Using in JavaScript/TypeScript
+
+Once built, you can easily use the optimizer in your frontend code:
+
+```javascript
+import init, { optimize_apng_wasm } from './pkg/apngopt_rs.js';
+
+async function run() {
+    // Initialize the WASM module
+    await init();
+    
+    // Example: Fetch an APNG file and convert to Uint8Array
+    const response = await fetch('my_animation.png');
+    const arrayBuffer = await response.arrayBuffer();
+    const inputData = new Uint8Array(arrayBuffer);
+    
+    try {
+        // Parameters:
+        // 1. input_data: Uint8Array containing the APNG file
+        // 2. z_method: 0=zlib, 1=7zip(zlib), 2=zopfli
+        // 3. iterations: zopfli iterations (default: 15)
+        // 4. disable_imagequant: 0=false(enabled), 1=true(disabled)
+        const optimizedData = optimize_apng_wasm(inputData, 0, 15, 0);
+        
+        console.log("Original size:", inputData.length);
+        console.log("Optimized size:", optimizedData.length);
+        
+        // Create a blob and URL to display or download the optimized image
+        const blob = new Blob([optimizedData], { type: 'image/png' });
+        const url = URL.createObjectURL(blob);
+        // ... use the URL ...
+    } catch (e) {
+        console.error("Optimization failed:", e);
+    }
+}
+
+run();
+```
+
+*(Note: When compiled to WASM, multithreading via `rayon` is disabled, and execution happens synchronously on the single JS thread. For heavy processing with Zopfli, consider using Web Workers to prevent blocking the UI).*
+
 ## Usage
 
 ```bash

@@ -1,22 +1,18 @@
+#[cfg(not(target_arch = "wasm32"))]
 use clap::Parser;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process;
 
-mod chunk;
-mod compress;
-mod decoder;
-mod encoder;
-mod filter;
-mod optimizer;
-mod quantize;
-mod reconstruct;
-
-use decoder::load_apng;
-use encoder::save_apng;
-use optimizer::{optimize_rect, OptimizedFrame};
-use reconstruct::reconstruct_frames;
+#[cfg(not(target_arch = "wasm32"))]
+use apngopt_rs::{decoder::load_apng, OptimizeOptions, optimize_apng_logic};
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::Write;
 
 /// APNG Optimizer (Rust Port)
 /// Optimizes APNG animations.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Parser, Debug)]
 #[command(name = "apngopt-rs", version = "1.4.1", about = "APNG Optimizer in Rust", long_about = None)]
 pub struct Args {
@@ -41,6 +37,10 @@ pub struct Args {
     pub output: Option<String>,
 }
 
+#[cfg(target_arch = "wasm32")]
+fn main() {}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let args = Args::parse();
 
@@ -59,114 +59,33 @@ fn main() {
         Ok(apng) => {
             println!("Optimizing {} ({}x{}, {} frames)...", args.input, apng.width, apng.height, apng.frames.len());
 
-            let mut full_frames = reconstruct_frames(&apng);
+            let options = OptimizeOptions {
+                z_method: args.z_method,
+                iterations: args.iterations,
+                disable_imagequant: args.disable_imagequant,
+            };
 
-            let mut palette = None;
-            let mut transparency = None;
-            let mut bpp = 4;
-            let mut has_tcolor = false;
-            let mut tcolor = 0;
-
-            if args.disable_imagequant == 0 {
-                match quantize::quantize_frames(&full_frames, apng.width, apng.height) {
-                    Ok(quantized) => {
-                        full_frames = quantized.frames;
-                        palette = Some(quantized.palette);
-                        transparency = Some(quantized.transparency);
-                        bpp = 1;
-
-                        // Find transparent color index
-                        if let Some(trns) = &transparency {
-                            if let Some(idx) = trns.iter().position(|&a| a == 0) {
-                                has_tcolor = true;
-                                tcolor = idx as u8;
-                            } else if let Some(idx) = trns.iter().position(|&a| a < 255) {
-                                has_tcolor = true;
-                                tcolor = idx as u8;
+            match optimize_apng_logic(apng, &options) {
+                Ok(optimized_data) => {
+                    match File::create(&out_file) {
+                        Ok(mut file) => {
+                            if let Err(e) = file.write_all(&optimized_data) {
+                                eprintln!("Error writing to output file: {}", e);
+                                process::exit(1);
                             }
+                            println!("Saved to {}.", out_file);
                         }
-                    }
-                    Err(e) => {
-                        eprintln!("Quantization failed: {}. Proceeding without quantization.", e);
+                        Err(e) => {
+                            eprintln!("Error creating output file: {}", e);
+                            process::exit(1);
+                        }
                     }
                 }
-            }
-
-            let mut optimized_frames: Vec<OptimizedFrame> = Vec::new();
-            for i in 0..full_frames.len() {
-                let curr_canvas = &full_frames[i];
-                let candidates = if i == 0 {
-                    let source_data = curr_canvas.clone();
-                    vec![optimizer::RectResult {
-                        x: 0,
-                        y: 0,
-                        w: apng.width,
-                        h: apng.height,
-                        blend_op: 0,
-                        dispose_op: 0,
-                        data: source_data,
-                    }]
-                } else {
-                    let prev_canvas = &full_frames[i - 1];
-                    optimizer::get_rect_candidates(
-                        prev_canvas,
-                        curr_canvas,
-                        apng.width,
-                        apng.height,
-                        0,
-                        bpp,
-                        has_tcolor,
-                        tcolor,
-                    )
-                };
-
-                if candidates.is_empty() {
-                    if let Some(last) = optimized_frames.last_mut() {
-                        if last.delay_den == apng.frames[i].delay_den {
-                            last.delay_num += apng.frames[i].delay_num;
-                        }
-                    }
-                } else {
-                    let mut best_compressed: Option<(Vec<u8>, optimizer::RectResult)> = None;
-
-                    for cand in candidates {
-                        let compressed = optimize_rect(&cand, args.z_method, args.iterations, bpp);
-                        if best_compressed.is_none()
-                            || compressed.len() < best_compressed.as_ref().unwrap().0.len()
-                        {
-                            best_compressed = Some((compressed, cand));
-                        }
-                    }
-
-                    let (compressed, cand) = best_compressed.unwrap();
-
-                    optimized_frames.push(OptimizedFrame {
-                        x: cand.x,
-                        y: cand.y,
-                        w: cand.w,
-                        h: cand.h,
-                        blend_op: cand.blend_op,
-                        dispose_op: cand.dispose_op,
-                        delay_num: apng.frames[i].delay_num,
-                        delay_den: apng.frames[i].delay_den,
-                        compressed_data: compressed,
-                    });
+                Err(e) => {
+                    eprintln!("Optimization failed: {}", e);
+                    process::exit(1);
                 }
             }
-
-            if let Err(e) = save_apng(
-                &out_file,
-                apng.width,
-                apng.height,
-                apng.loops,
-                &optimized_frames,
-                palette.as_deref(),
-                transparency.as_deref(),
-            ) {
-                eprintln!("Error saving APNG: {}", e);
-                process::exit(1);
-            }
-            println!("Saved to {}.", out_file);
         }
         Err(e) => {
             eprintln!("Error loading APNG: {}", e);

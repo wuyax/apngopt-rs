@@ -1,5 +1,9 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::BufReader;
+
+use std::io::{Cursor, Read};
 
 pub struct Frame {
     pub width: u32,
@@ -20,9 +24,19 @@ pub struct ApngImage {
     pub frames: Vec<Frame>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_apng(path: &str) -> Result<ApngImage, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let reader = BufReader::new(file);
+    load_apng_from_reader(reader)
+}
+
+pub fn load_apng_from_memory(data: &[u8]) -> Result<ApngImage, String> {
+    let reader = Cursor::new(data);
+    load_apng_from_reader(reader)
+}
+
+pub fn load_apng_from_reader<R: Read + std::io::BufRead + std::io::Seek>(reader: R) -> Result<ApngImage, String> {
     let mut decoder = png::Decoder::new(reader);
 
     // We want to normalize the output to 8-bit per channel

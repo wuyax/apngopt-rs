@@ -1,5 +1,6 @@
 use crate::compress::compress_data;
 use crate::filter::apply_filter;
+#[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
 
 #[derive(Clone)]
@@ -183,8 +184,13 @@ pub fn optimize_rect(
     // Try all 5 filters in parallel
     let filters = vec![0, 1, 2, 3, 4];
 
-    let best_compressed = filters
-        .into_par_iter()
+    #[cfg(not(target_arch = "wasm32"))]
+    let iter = filters.into_par_iter();
+
+    #[cfg(target_arch = "wasm32")]
+    let iter = filters.into_iter();
+
+    let best_compressed = iter
         .map(|filter_type| {
             let filtered_data = apply_filter(&rect.data, rect.w, rect.h, bpp, filter_type);
             compress_data(&filtered_data, compression_method, iterations)

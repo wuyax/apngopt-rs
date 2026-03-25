@@ -1,8 +1,10 @@
 use crate::chunk::Chunk;
 use crate::optimizer::OptimizedFrame;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
 use std::io::{self, Write};
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn save_apng(
     output_path: &str,
     width: u32,
@@ -13,9 +15,33 @@ pub fn save_apng(
     transparency: Option<&[u8]>,
 ) -> io::Result<()> {
     let mut file = File::create(output_path)?;
+    save_apng_to_writer(&mut file, width, height, loops, frames, palette, transparency)
+}
 
+pub fn save_apng_to_memory(
+    width: u32,
+    height: u32,
+    loops: u32,
+    frames: &[OptimizedFrame],
+    palette: Option<&[[u8; 3]]>,
+    transparency: Option<&[u8]>,
+) -> io::Result<Vec<u8>> {
+    let mut buffer = Vec::new();
+    save_apng_to_writer(&mut buffer, width, height, loops, frames, palette, transparency)?;
+    Ok(buffer)
+}
+
+pub fn save_apng_to_writer<W: Write>(
+    writer: &mut W,
+    width: u32,
+    height: u32,
+    loops: u32,
+    frames: &[OptimizedFrame],
+    palette: Option<&[[u8; 3]]>,
+    transparency: Option<&[u8]>,
+) -> io::Result<()> {
     // Write PNG Signature
-    file.write_all(b"\x89PNG\r\n\x1a\n")?;
+    writer.write_all(b"\x89PNG\r\n\x1a\n")?;
 
     // Write IHDR
     // Width (4), Height (4), Bit depth (1), Color type (1), Compression (1), Filter (1), Interlace (1)
@@ -28,13 +54,13 @@ pub fn save_apng(
     ihdr_data.push(0); // Compression method
     ihdr_data.push(0); // Filter method
     ihdr_data.push(0); // Interlace method
-    Chunk::new(*b"IHDR", ihdr_data).write(&mut file)?;
+    Chunk::new(*b"IHDR", ihdr_data).write(writer)?;
 
     // Write acTL
     let mut actl_data = Vec::with_capacity(8);
     actl_data.extend_from_slice(&(frames.len() as u32).to_be_bytes());
     actl_data.extend_from_slice(&loops.to_be_bytes());
-    Chunk::new(*b"acTL", actl_data).write(&mut file)?;
+    Chunk::new(*b"acTL", actl_data).write(writer)?;
 
     // Write PLTE and tRNS if present
     if let Some(pal) = palette {
@@ -42,11 +68,11 @@ pub fn save_apng(
         for color in pal {
             plte_data.extend_from_slice(color);
         }
-        Chunk::new(*b"PLTE", plte_data).write(&mut file)?;
+        Chunk::new(*b"PLTE", plte_data).write(writer)?;
     }
 
     if let Some(trns) = transparency {
-        Chunk::new(*b"tRNS", trns.to_vec()).write(&mut file)?;
+        Chunk::new(*b"tRNS", trns.to_vec()).write(writer)?;
     }
 
     let mut sequence_number = 0u32;
@@ -63,25 +89,25 @@ pub fn save_apng(
         fctl_data.extend_from_slice(&frame.delay_den.to_be_bytes());
         fctl_data.push(frame.dispose_op);
         fctl_data.push(frame.blend_op);
-        Chunk::new(*b"fcTL", fctl_data).write(&mut file)?;
+        Chunk::new(*b"fcTL", fctl_data).write(writer)?;
         sequence_number += 1;
 
         // Write image data
         if i == 0 {
             // First frame must be IDAT
-            Chunk::new(*b"IDAT", frame.compressed_data.clone()).write(&mut file)?;
+            Chunk::new(*b"IDAT", frame.compressed_data.clone()).write(writer)?;
         } else {
             // Subsequent frames must be fdAT (prepended with sequence_number)
             let mut fdat_data = Vec::with_capacity(4 + frame.compressed_data.len());
             fdat_data.extend_from_slice(&sequence_number.to_be_bytes());
             fdat_data.extend_from_slice(&frame.compressed_data);
-            Chunk::new(*b"fdAT", fdat_data).write(&mut file)?;
+            Chunk::new(*b"fdAT", fdat_data).write(writer)?;
             sequence_number += 1;
         }
     }
 
     // Write IEND
-    Chunk::new(*b"IEND", Vec::new()).write(&mut file)?;
+    Chunk::new(*b"IEND", Vec::new()).write(writer)?;
 
     Ok(())
 }
